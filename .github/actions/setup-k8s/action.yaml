@@ -1,0 +1,51 @@
+name: 'Setup Kubernetes and Yandex Cloud CLI'
+description: 'Install and configure kubectl, Helm, and Yandex Cloud CLI for Kubernetes operations'
+
+inputs:
+  yc-service-account-key:
+    description: 'Yandex Cloud service account key (JSON)'
+    required: true
+  yc-cloud-id:
+    description: 'Yandex Cloud ID'
+    required: true
+  yc-folder-id:
+    description: 'Yandex Cloud folder ID'
+    required: true
+  yc-cluster-id:
+    description: 'Yandex Cloud Kubernetes cluster ID'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v4
+
+    - name: Setup Helm
+      uses: azure/setup-helm@v4
+      with:
+        version: 'latest'
+
+    - name: Install Yandex Cloud CLI
+      shell: bash
+      run: |
+        curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+        echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
+
+    - name: Configure Yandex Cloud CLI
+      shell: bash
+      run: |
+        yc config profile create sa-profile
+        cat <<'EOF' > key.json
+        ${{ inputs.yc-service-account-key }}
+        EOF
+        yc config set service-account-key key.json
+        yc config set cloud-id ${{ inputs.yc-cloud-id }}
+        yc config set folder-id ${{ inputs.yc-folder-id }}
+        rm -f key.json
+
+    - name: Configure Kubernetes context
+      shell: bash
+      run: |
+        echo "Getting credentials for cluster: ${{ inputs.yc-cluster-id }}"
+        yc managed-kubernetes cluster get-credentials ${{ inputs.yc-cluster-id }} --external --force

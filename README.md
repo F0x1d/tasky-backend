@@ -62,9 +62,13 @@ Production-ready microservices architecture with automated CI/CD and high availa
 ├── scripts/
 │   └── generate-secrets.sh       # Secret generation script
 ├── .github/
+│   ├── actions/
+│   │   └── setup-k8s/                   # Reusable composite action for K8s setup
+│   │       └── action.yaml
 │   └── workflows/
-│       ├── build-and-deploy.yaml # CI/CD pipeline for releases
-│       └── preview.yaml          # Preview builds
+│       ├── build-and-deploy.yaml        # CI/CD pipeline for releases
+│       ├── build-and-deploy-preview.yaml # PR preview builds and deployments
+│       └── cleanup-preview.yaml         # PR preview cleanup
 ├── README.md                     # This file
 └── SETUP.md                      # One-time setup guide
 ```
@@ -548,18 +552,34 @@ kubectl edit cluster postgres-auth -n prod
 
 ## CI/CD Pipeline Details
 
-### GitHub Actions Workflow
+### GitHub Actions Workflows
+
+**Build and Deploy** (`.github/workflows/build-and-deploy.yaml`)
 
 Triggered by:
-- Git tags: `v*.*.*` (e.g., v1.0.0, v1.2.3)
+- Git tags: `v*.*.*` (production deployment)
+- Push to `dev` branch (testing deployment)
 - Manual dispatch via GitHub UI
 
 Workflow steps:
-1. **Build**: Builds Docker images for both services
+1. **Build**: Builds Docker images for both services using matrix strategy
 2. **Tag**: Tags images with version and `latest`
 3. **Push**: Pushes to GHCR (ghcr.io/YOUR_USERNAME/SERVICE:VERSION)
-4. **Update**: Updates kustomization.yaml with new version
-5. **Commit**: Commits updated kustomization.yaml to Git
+4. **Deploy**: Deploys to Kubernetes using Helm with environment-specific values
+
+**Build and Deploy Preview** (`.github/workflows/build-and-deploy-preview.yaml`)
+
+Triggered by:
+- PR labeled with `deploy` or synchronized after labeling
+
+Builds Docker images and creates temporary preview environments at `tasky-testing.f0x1d.com/pr-X/*`
+
+**Cleanup Preview** (`.github/workflows/cleanup-preview.yaml`)
+
+Triggered by:
+- PR closed
+
+Deletes preview environment resources (Helm releases and namespace)
 
 ### Semantic Versioning
 

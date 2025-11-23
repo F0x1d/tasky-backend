@@ -8,50 +8,51 @@ env:
   NAMESPACE: pr-${{ github.event.number }}
 
 jobs:
-  cleanup-preview:
+  delete-releases:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      matrix:
+        service: [auth-service, tasks-service]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Kubernetes and Yandex Cloud CLI
+        uses: ./.github/actions/setup-k8s
+        with:
+          yc-service-account-key: ${{ secrets.YC_SERVICE_ACCOUNT_KEY }}
+          yc-cloud-id: ${{ secrets.YC_CLOUD_ID }}
+          yc-folder-id: ${{ secrets.YC_FOLDER_ID }}
+          yc-cluster-id: ${{ secrets.YC_CLUSTER_ID }}
+
+      - name: Delete Helm release ${{ matrix.service }}
+        run: |
+          helm delete ${{ matrix.service }} --namespace ${{ env.NAMESPACE }} || echo "${{ matrix.service }} release not found"
+
+  cleanup-namespace:
+    needs: delete-releases
     runs-on: ubuntu-latest
     continue-on-error: true
     permissions:
       contents: read
       pull-requests: write
+    if: always()
     
     steps:
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Setup Helm
-        uses: azure/setup-helm@v4
+      - name: Setup Kubernetes and Yandex Cloud CLI
+        uses: ./.github/actions/setup-k8s
         with:
-          version: 'latest'
-
-      - name: Install Yandex Cloud CLI
-        run: |
-          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
-          echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
-
-      - name: Configure Yandex Cloud CLI
-        run: |
-          yc config profile create sa-profile
-          cat <<'EOF' > key.json
-          ${{ secrets.YC_SERVICE_ACCOUNT_KEY }}
-          EOF
-          yc config set service-account-key key.json
-          yc config set cloud-id ${{ secrets.YC_CLOUD_ID }}
-          yc config set folder-id ${{ secrets.YC_FOLDER_ID }}
-          rm -f key.json
-
-      - name: Configure Kubernetes context
-        run: |
-          echo "Getting credentials for cluster: ${{ secrets.YC_CLUSTER_ID }}"
-          yc managed-kubernetes cluster get-credentials ${{ secrets.YC_CLUSTER_ID }} --external --force
-
-      - name: Delete Helm releases
-        run: |
-          helm delete auth-service --namespace ${{ env.NAMESPACE }} || echo "auth-service release not found"
-          helm delete tasks-service --namespace ${{ env.NAMESPACE }} || echo "tasks-service release not found"
+          yc-service-account-key: ${{ secrets.YC_SERVICE_ACCOUNT_KEY }}
+          yc-cloud-id: ${{ secrets.YC_CLOUD_ID }}
+          yc-folder-id: ${{ secrets.YC_FOLDER_ID }}
+          yc-cluster-id: ${{ secrets.YC_CLUSTER_ID }}
 
       - name: Delete namespace
-        if: always()
         run: |
           kubectl delete namespace ${{ env.NAMESPACE }} || echo "Namespace not found"
 
