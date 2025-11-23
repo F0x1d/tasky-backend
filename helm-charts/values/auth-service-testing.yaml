@@ -13,7 +13,7 @@ service:
   port: 8000
 
 config:
-  apiPath: /api/auth
+  apiPath: /dev/api/auth
 
 extraSecrets:
   - name: rsa-keys
@@ -94,7 +94,7 @@ ingress:
   enabled: true
   className: nginx
   host: tasky-testing.f0x1d.com
-  path: /api/auth
+  path: /dev/api/auth
   pathType: ImplementationSpecific
   tls:
     enabled: true

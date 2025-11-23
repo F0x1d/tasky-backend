@@ -17,7 +17,7 @@ Production-ready microservices architecture with automated CI/CD and high availa
 - **Container Registry**: GitHub Container Registry (GHCR) - free and unlimited
 - **CI/CD**: GitHub Actions - automatic builds on git tags
 - **Monitoring**: Prometheus + Grafana with persistent storage
-- **DNS**: tasky.f0x1d.com (prod), test.tasky.f0x1d.com (testing)
+- **DNS**: tasky.f0x1d.com (prod), tasky-testing.f0x1d.com (testing and PR previews)
 
 ### Tech Stack
 - **Python 3.13** + **FastAPI** + **PostgreSQL 16**
@@ -210,11 +210,24 @@ Access services at: `https://tasky.f0x1d.com` (via LoadBalancer + Ingress)
 - `GET /api/tasks/docs` - OpenAPI documentation
 
 ### Monitoring
-- `https://tasky.f0x1d.com/grafana` - Grafana dashboard
+- `https://tasky.f0x1d.com/grafana` - Grafana dashboard (prod)
   - Username: `admin`
   - Password: (from secrets generation output)
 
-Testing environment is exposed separately at `https://test.tasky.f0x1d.com` for `/api/auth` and `/api/tasks`.
+### Environments
+
+**Production:**
+- Auth Service: `https://tasky.f0x1d.com/api/auth`
+- Tasks Service: `https://tasky.f0x1d.com/api/tasks`
+
+**Testing (dev branch):**
+- Auth Service: `https://tasky-testing.f0x1d.com/dev/api/auth`
+- Tasks Service: `https://tasky-testing.f0x1d.com/dev/api/tasks`
+
+**PR Previews:**
+- Auth Service: `https://tasky-testing.f0x1d.com/pr-X/api/auth`
+- Tasks Service: `https://tasky-testing.f0x1d.com/pr-X/api/tasks`
+(Replace X with your PR number)
 
 ### Example Usage
 

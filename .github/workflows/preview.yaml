@@ -7,7 +7,8 @@ on:
 env:
   REGISTRY: ghcr.io
   NAMESPACE: pr-${{ github.event.number }}
-  BASE_DOMAIN: tasky.f0x1d.com
+  BASE_DOMAIN: tasky-testing.f0x1d.com
+  PATH_PREFIX: pr-${{ github.event.number }}
 
 jobs:
   metadata:
@@ -117,6 +118,13 @@ jobs:
           VERSION="${{ needs.metadata.outputs.version }}"
           REPO_OWNER_LOWER="${{ needs.metadata.outputs.repo_owner_lower }}"
           
+          # Determine the API path based on service
+          if [ "${{ matrix.service }}" == "auth-service" ]; then
+            API_PATH="/${{ env.PATH_PREFIX }}/api/auth"
+          else
+            API_PATH="/${{ env.PATH_PREFIX }}/api/tasks"
+          fi
+          
           helm upgrade ${{ matrix.service }} ./helm-charts/microservice \
             --install \
             --namespace ${{ env.NAMESPACE }} \
@@ -127,8 +135,10 @@ jobs:
             --set namespace=${{ env.NAMESPACE }} \
             --set image.repository=${{ env.REGISTRY }}/${REPO_OWNER_LOWER}/${{ matrix.service }} \
             --set image.tag=${VERSION} \
-            --set ingress.host=${{ env.NAMESPACE }}.${{ env.BASE_DOMAIN }} \
-            --set ingress.tls.secretName=${{ env.NAMESPACE }}-tls \
+            --set ingress.host=${{ env.BASE_DOMAIN }} \
+            --set ingress.path=${API_PATH} \
+            --set ingress.tls.secretName=tasky-testing-f0x1d-com-tls \
+            --set config.apiPath=${API_PATH} \
             --set postgres.enabled=true \
             --set postgres.resources.requests.cpu=50m \
             --set postgres.resources.limits.cpu=100m \
@@ -159,7 +169,7 @@ jobs:
             **Namespace:** `${{ env.NAMESPACE }}`
             
             **URLs:**
-            - Auth Service: https://${{ env.NAMESPACE }}.${{ env.BASE_DOMAIN }}/api/auth
-            - Tasks Service: https://${{ env.NAMESPACE }}.${{ env.BASE_DOMAIN }}/api/tasks
+            - Auth Service: https://${{ env.BASE_DOMAIN }}/${{ env.PATH_PREFIX }}/api/auth
+            - Tasks Service: https://${{ env.BASE_DOMAIN }}/${{ env.PATH_PREFIX }}/api/tasks
             
             The preview environment will be automatically cleaned up when the PR is closed.
