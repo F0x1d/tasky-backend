@@ -10,15 +10,36 @@ env:
   BASE_DOMAIN: tasky.f0x1d.com
 
 jobs:
-  deploy-preview:
+  metadata:
     runs-on: ubuntu-latest
     if: ${{ github.event.label.name == 'deploy' }}
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      repo_owner_lower: ${{ steps.meta.outputs.repo_owner_lower }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate metadata
+        id: meta
+        run: |
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          VERSION="pr-${{ github.event.number }}-${SHORT_SHA}"
+          
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          
+          REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "repo_owner_lower=${REPO_OWNER_LOWER}" >> $GITHUB_OUTPUT
+
+  build:
+    needs: metadata
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [auth-service, tasks-service]
     permissions:
       contents: read
       packages: write
-      pull-requests: write
-    outputs:
-      version: ${{ steps.meta.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -33,36 +54,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate metadata
-        id: meta
-        run: |
-          SHORT_SHA=$(git rev-parse --short=7 HEAD)
-          VERSION="pr-${{ github.event.number }}-${SHORT_SHA}"
-          
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          
-          REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "repo_owner_lower=${REPO_OWNER_LOWER}" >> $GITHUB_OUTPUT
-
-      - name: Build and push auth-service
+      - name: Build and push ${{ matrix.service }}
         uses: docker/build-push-action@v5
         with:
-          context: ./auth-service
+          context: ./${{ matrix.service }}
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ steps.meta.outputs.repo_owner_lower }}/auth-service:${{ steps.meta.outputs.version }}
+            ${{ env.REGISTRY }}/${{ needs.metadata.outputs.repo_owner_lower }}/${{ matrix.service }}:${{ needs.metadata.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push tasks-service
-        uses: docker/build-push-action@v5
-        with:
-          context: ./tasks-service
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ steps.meta.outputs.repo_owner_lower }}/tasks-service:${{ steps.meta.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+  deploy:
+    needs: [metadata, build]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [auth-service, tasks-service]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
@@ -93,47 +103,38 @@ jobs:
           echo "Getting credentials for cluster: ${{ secrets.YC_CLUSTER_ID }}"
           yc managed-kubernetes cluster get-credentials ${{ secrets.YC_CLUSTER_ID }} --external --force
 
-      - name: Deploy auth-service
+      - name: Deploy ${{ matrix.service }}
         run: |
-          helm upgrade auth-service ./helm-charts/microservice \
+          VERSION="${{ needs.metadata.outputs.version }}"
+          REPO_OWNER_LOWER="${{ needs.metadata.outputs.repo_owner_lower }}"
+          
+          helm upgrade ${{ matrix.service }} ./helm-charts/microservice \
             --install \
             --namespace ${{ env.NAMESPACE }} \
             --create-namespace \
             --wait \
             --timeout 5m \
-            --values helm-charts/values/auth-service-testing.yaml \
-            --set image.repository=${{ env.REGISTRY }}/${{ steps.meta.outputs.repo_owner_lower }}/auth-service \
-            --set image.tag=${{ steps.meta.outputs.version }} \
-            --set ingress.host=${{ env.NAMESPACE }}.${{ env.BASE_DOMAIN }} \
-            --set ingress.tls.secretName=${{ env.NAMESPACE }}-tls \
-            --set grafana.ingress.host=${{ env.NAMESPACE }}.${{ env.BASE_DOMAIN }} \
-            --set grafana.ingress.tls.secretName=${{ env.NAMESPACE }}-tls \
-            --set postgres.enabled=true \
-            --set prometheus.enabled=false \
-            --set grafana.enabled=false
-
-      - name: Deploy tasks-service
-        run: |
-          helm upgrade tasks-service ./helm-charts/microservice \
-            --install \
-            --namespace ${{ env.NAMESPACE }} \
-            --create-namespace \
-            --wait \
-            --timeout 5m \
-            --values helm-charts/values/tasks-service-testing.yaml \
-            --set image.repository=${{ env.REGISTRY }}/${{ steps.meta.outputs.repo_owner_lower }}/tasks-service \
-            --set image.tag=${{ steps.meta.outputs.version }} \
+            --values helm-charts/values/${{ matrix.service }}-testing.yaml \
+            --set namespace=${{ env.NAMESPACE }} \
+            --set image.repository=${{ env.REGISTRY }}/${REPO_OWNER_LOWER}/${{ matrix.service }} \
+            --set image.tag=${VERSION} \
             --set ingress.host=${{ env.NAMESPACE }}.${{ env.BASE_DOMAIN }} \
             --set ingress.tls.secretName=${{ env.NAMESPACE }}-tls \
             --set postgres.enabled=true \
             --set prometheus.enabled=false \
             --set grafana.enabled=false
 
-      - name: Verify deployments
+      - name: Verify deployment
         run: |
-          kubectl get pods -n ${{ env.NAMESPACE }}
-          kubectl get ingress -n ${{ env.NAMESPACE }}
+          kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ matrix.service }}
+          kubectl rollout status deployment/${{ matrix.service }} -n ${{ env.NAMESPACE }} --timeout=5m
 
+  comment:
+    needs: [metadata, deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
       - name: Comment on PR
         uses: marocchino/sticky-pull-request-comment@v2
         with:
@@ -141,7 +142,7 @@ jobs:
           message: |
             ### 🚀 Preview Environment Deployed
             
-            **Image Tag:** `${{ steps.meta.outputs.version }}`
+            **Image Tag:** `${{ needs.metadata.outputs.version }}`
             **Namespace:** `${{ env.NAMESPACE }}`
             
             **URLs:**

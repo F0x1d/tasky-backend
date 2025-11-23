@@ -155,6 +155,7 @@ jobs:
             --wait \
             --timeout 5m \
             --values helm-charts/values/${{ matrix.service }}-${ENVIRONMENT}.yaml \
+            --set namespace=${ENVIRONMENT} \
             --set image.repository=${{ env.REGISTRY }}/${REPO_OWNER_LOWER}/${{ matrix.service }} \
             --set image.tag=${VERSION}
       
