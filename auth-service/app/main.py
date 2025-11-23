@@ -76,7 +76,7 @@ async def metrics():
 
 @app.get("/swag")
 async def swag():
-    return {"swag": "true"}
+    return {"swag": "true", "cool": "true"}
 
 
 @app.post(
