@@ -4,26 +4,26 @@ kind: Kustomization
 namespace: testing
 
 resources:
-  - ../../auth-service
-  - ../../tasks-service
-  - cloudnative-pg.yaml
-  - ingress.yaml
-  - networkpolicies.yaml
+- ../../auth-service
+- ../../tasks-service
+- cloudnative-pg.yaml
+- ingress.yaml
+- networkpolicies.yaml
 
 # Always pull images in testing environment for development
 patches:
-  - path: deployment-patch.yaml
+- path: deployment-patch.yaml
 
 replicas:
-  - name: auth-service
-    count: 1
-  - name: tasks-service
-    count: 1
+- count: 1
+  name: auth-service
+- count: 1
+  name: tasks-service
 
 images:
-  - name: auth-service
-    newName: ghcr.io/f0x1d/auth-service
-    newTag: 1.0.0
-  - name: tasks-service
-    newName: ghcr.io/f0x1d/tasks-service
-    newTag: 1.0.0
+- name: auth-service
+  newName: ghcr.io/f0x1d/auth-service
+  newTag: 9bebca9
+- name: tasks-service
+  newName: ghcr.io/f0x1d/tasks-service
+  newTag: 9bebca9
