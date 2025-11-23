@@ -68,6 +68,10 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
 
+@app.get("/swag")
+async def swag():
+    return {"swag": "true"}
+
 
 @app.get("/metrics", tags=["Monitoring"])
 async def metrics():
