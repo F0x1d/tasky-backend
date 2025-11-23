@@ -28,12 +28,8 @@ spec:
         path: k8s/overlays/preview
         kustomize:
           images:
-          - name: auth-service
-            newName: ghcr.io/f0x1d/auth-service
-            newTag: 'pr-{{.number}}-{{.head_short_sha}}'
-          - name: tasks-service
-            newName: ghcr.io/f0x1d/tasks-service
-            newTag: 'pr-{{.number}}-{{.head_short_sha}}'
+          - 'auth-service=ghcr.io/f0x1d/auth-service:pr-{{.number}}-{{.head_short_sha}}'
+          - 'tasks-service=ghcr.io/f0x1d/tasks-service:pr-{{.number}}-{{.head_short_sha}}'
           patches:
           - target:
               kind: Ingress
