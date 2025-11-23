@@ -464,11 +464,17 @@ curl http://$LOADBALANCER_IP/api/tasks/docs
 ### 10.2 Test via Domain
 
 ```bash
-# Test auth service
+# Test auth service (production)
 curl https://tasky.f0x1d.com/api/auth/docs
 
-# Test tasks service
+# Test tasks service (production)
 curl https://tasky.f0x1d.com/api/tasks/docs
+
+# Test auth service (testing/dev)
+curl https://tasky-testing.f0x1d.com/dev/api/auth/docs
+
+# Test tasks service (testing/dev)
+curl https://tasky-testing.f0x1d.com/dev/api/tasks/docs
 
 # Should return HTML
 ```
@@ -503,11 +509,21 @@ curl https://tasky.f0x1d.com/api/tasks/tasks \
 
 Open in browser:
 
+**Production:**
 - **Auth Service API Docs:** https://tasky.f0x1d.com/api/auth/docs
 - **Tasks Service API Docs:** https://tasky.f0x1d.com/api/tasks/docs
 - **Grafana Dashboard:** https://tasky.f0x1d.com/grafana
   - Username: `admin`
   - Password: (from Step 6 output or retrieve using command below)
+
+**Testing/Dev:**
+- **Auth Service API Docs:** https://tasky-testing.f0x1d.com/dev/api/auth/docs
+- **Tasks Service API Docs:** https://tasky-testing.f0x1d.com/dev/api/tasks/docs
+- **Grafana Dashboard:** https://tasky-testing.f0x1d.com/grafana
+
+**PR Previews:**
+- Access via: https://tasky-testing.f0x1d.com/pr-X/api/auth and https://tasky-testing.f0x1d.com/pr-X/api/tasks
+- Replace X with your PR number
 
 ```bash
 # Get Grafana password

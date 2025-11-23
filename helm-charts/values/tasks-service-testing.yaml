@@ -13,7 +13,7 @@ service:
   port: 8001
 
 config:
-  apiPath: /api/tasks
+  apiPath: /dev/api/tasks
 
 extraSecrets:
   - name: rsa-keys
@@ -92,7 +92,7 @@ ingress:
   enabled: true
   className: nginx
   host: tasky-testing.f0x1d.com
-  path: /api/tasks
+  path: /dev/api/tasks
   pathType: ImplementationSpecific
   tls:
     enabled: true
