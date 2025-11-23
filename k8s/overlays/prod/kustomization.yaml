@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: prod
+
+resources:
+- ../../auth-service
+- ../../tasks-service
+- postgres-auth.yaml
+- postgres-tasks.yaml
+- ingress.yaml
+- networkpolicies.yaml
+
+replicas:
+- count: 2
+  name: auth-service
+- count: 2
+  name: tasks-service
+
+images:
+- name: auth-service
+  newName: ghcr.io/f0x1d/auth-service
+  newTag: 1.0.0
+- name: tasks-service
+  newName: ghcr.io/f0x1d/tasks-service
+  newTag: 1.0.0

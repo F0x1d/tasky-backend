@@ -1,0 +1,33 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-auth
+  namespace: prod
+spec:
+  instances: 2
+  
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: "256MB"
+  
+  bootstrap:
+    initdb:
+      database: auth
+      owner: auth
+  
+  storage:
+    size: 5Gi
+    storageClass: yc-network-hdd
+  
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  
+  affinity:
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname

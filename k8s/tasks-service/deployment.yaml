@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tasks-service
+  labels:
+    app: tasks-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tasks-service
+  template:
+    metadata:
+      labels:
+        app: tasks-service
+    spec:
+      serviceAccountName: tasks-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - tasks-service
+            topologyKey: "kubernetes.io/hostname"
+      containers:
+      - name: tasks-service
+        image: tasks-service
+        imagePullPolicy: Always
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - containerPort: 8001
+          name: http
+        envFrom:
+        - configMapRef:
+            name: tasks-service-config
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: postgres-tasks-app
+              key: uri
+        - name: PUBLIC_KEY_PATH
+          value: "/app/keys/public_key.pem"
+        volumeMounts:
+        - name: rsa-public-key
+          mountPath: /app/keys
+          readOnly: true
+        - name: cache
+          mountPath: /.cache
+        - name: tmp
+          mountPath: /tmp
+        - name: venv
+          mountPath: /app/.venv
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      volumes:
+      - name: rsa-public-key
+        secret:
+          secretName: rsa-keys
+          items:
+          - key: public_key.pem
+            path: public_key.pem
+      - name: cache
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      - name: venv
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tasks-service
+  labels:
+    app: tasks-service
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8001
+    targetPort: 8001
+    name: http
+  selector:
+    app: tasks-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tasks-service

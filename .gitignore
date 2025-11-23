@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+.uv/
+*.egg-info/
+.eggs/
+
+# Docker
+*.tar.gz
+
+# Secrets
+k8s/secrets/*.yaml
+k8s/secrets/*.pem
+private_key.pem
+public_key.pem
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local

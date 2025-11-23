@@ -1,0 +1,62 @@
+# Testing environment - single replica PostgreSQL clusters
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-auth
+  namespace: testing
+spec:
+  instances: 1
+  
+  postgresql:
+    parameters:
+      max_connections: "50"
+      shared_buffers: "128MB"
+  
+  bootstrap:
+    initdb:
+       database: auth
+       owner: auth
+  
+  storage:
+    size: 2Gi
+    storageClass: yc-network-hdd
+  
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-tasks
+  namespace: testing
+spec:
+  instances: 1
+  
+  postgresql:
+    parameters:
+      max_connections: "50"
+      shared_buffers: "128MB"
+  
+  bootstrap:
+    initdb:
+       database: tasks
+       owner: tasks
+  
+  storage:
+    size: 2Gi
+    storageClass: yc-network-hdd
+  
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  

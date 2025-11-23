@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# This namespace is a placeholder, ArgoCD will override it
+namespace: preview
+
+resources:
+  - ../../auth-service
+  - ../../tasks-service
+  - ingress.yaml
+
+replicas:
+  - name: auth-service
+    count: 1
+  - name: tasks-service
+    count: 1
+
+images:
+  - name: auth-service
+    newName: ghcr.io/f0x1d/auth-service
+    # Tag will be patched by ArgoCD
+  - name: tasks-service
+    newName: ghcr.io/f0x1d/tasks-service
+    # Tag will be patched by ArgoCD

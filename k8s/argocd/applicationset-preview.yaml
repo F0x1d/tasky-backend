@@ -1,0 +1,53 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: preview-environments
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+  - pullRequest:
+      github:
+        # The GitHub organization or user.
+        owner: F0x1d
+        # The repository name.
+        repo: tasky-backend
+        # Labels is used to filter the PRs.
+        # labels:
+        # - preview
+      requeueAfterSeconds: 180
+  template:
+    metadata:
+      name: 'preview-{{.number}}'
+    spec:
+      project: default
+      source:
+        repoURL: 'https://github.com/F0x1d/tasky-backend.git'
+        targetRevision: '{{.head_sha}}'
+        path: k8s/overlays/preview
+        kustomize:
+          images:
+          - name: auth-service
+            newName: ghcr.io/f0x1d/auth-service
+            newTag: 'pr-{{.number}}-{{.head_short_sha}}'
+          - name: tasks-service
+            newName: ghcr.io/f0x1d/tasks-service
+            newTag: 'pr-{{.number}}-{{.head_short_sha}}'
+          patches:
+          - target:
+              kind: Ingress
+              name: preview-ingress
+            patch: |-
+              - op: replace
+                path: /spec/rules/0/host
+                value: preview-{{.number}}.tasky.f0x1d.com
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: 'preview-{{.number}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

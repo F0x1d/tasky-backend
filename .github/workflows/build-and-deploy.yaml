@@ -1,0 +1,176 @@
+name: Build and Deploy
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Prod release
+    branches:
+      - dev       # Testing release
+  workflow_dispatch:  # Manual trigger
+    inputs:
+      version:
+        description: 'Version to deploy'
+        required: true
+        default: 'latest'
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+          - prod
+          - testing
+
+env:
+  REGISTRY: ghcr.io
+  
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [auth-service, tasks-service]
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set version and registry
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="$(git rev-parse --short HEAD)"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION}"
+          
+          # Convert repository owner to lowercase for GHCR
+          REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "REPO_OWNER_LOWER=${REPO_OWNER_LOWER}" >> $GITHUB_OUTPUT
+          echo "Repository owner (lowercase): ${REPO_OWNER_LOWER}"
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.version.outputs.REPO_OWNER_LOWER }}/${{ matrix.service }}:${{ steps.version.outputs.VERSION }}
+            ${{ env.REGISTRY }}/${{ steps.version.outputs.REPO_OWNER_LOWER }}/${{ matrix.service }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.event.repository.html_url }}
+            org.opencontainers.image.description=${{ matrix.service }} for microservices architecture
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+    
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+  
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Run on tag pushes (prod), dev branch pushes (testing), and manual dispatch
+    if: (github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/dev')) || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: main # Always checkout main to update GitOps config
+      
+      - name: Setup Kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+      
+      - name: Update image tags in kustomization
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          REGISTRY_LOWER=$(echo "${{ env.REGISTRY }}/${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENVIRONMENT="${{ github.event.inputs.environment }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            ENVIRONMENT="prod"
+          elif [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            ENVIRONMENT="testing"
+          else
+            ENVIRONMENT="prod"
+          fi
+
+          echo "Updating kustomization for environment: ${ENVIRONMENT}"
+
+          if [[ "${ENVIRONMENT}" == "prod" ]]; then
+            cd k8s/overlays/prod
+            kustomize edit set image auth-service=${REGISTRY_LOWER}/auth-service:${VERSION}
+            kustomize edit set image tasks-service=${REGISTRY_LOWER}/tasks-service:${VERSION}
+          elif [[ "${ENVIRONMENT}" == "testing" ]]; then
+            cd k8s/overlays/testing
+            kustomize edit set image auth-service=${REGISTRY_LOWER}/auth-service:${VERSION}
+            kustomize edit set image tasks-service=${REGISTRY_LOWER}/tasks-service:${VERSION}
+          else
+            echo "Unknown environment: ${ENVIRONMENT}" >&2
+            exit 1
+          fi
+      
+      - name: Commit updated kustomization (GitOps approach)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENVIRONMENT="${{ github.event.inputs.environment }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            ENVIRONMENT="prod"
+          elif [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            ENVIRONMENT="testing"
+          else
+            ENVIRONMENT="prod"
+          fi
+
+          if [[ "${ENVIRONMENT}" == "prod" ]]; then
+            git add k8s/overlays/prod/kustomization.yaml
+          elif [[ "${ENVIRONMENT}" == "testing" ]]; then
+            git add k8s/overlays/testing/kustomization.yaml
+          fi
+
+          git commit -m "chore: update images to version ${{ needs.build.outputs.version }} (env: ${ENVIRONMENT})" || echo "No changes to commit"
+          git push origin HEAD:main
+      
+      - name: Create deployment summary
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Registry:** \`${{ env.REGISTRY }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Images Built:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.REGISTRY }}/${REPO_OWNER_LOWER}/auth-service:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.REGISTRY }}/${REPO_OWNER_LOWER}/tasks-service:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. ArgoCD will automatically sync changes (if configured)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Or manually deploy: \`kubectl apply -k k8s/auth-service\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Monitor: \`kubectl get pods -n prod -w\`" >> $GITHUB_STEP_SUMMARY
