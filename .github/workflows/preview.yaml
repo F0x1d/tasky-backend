@@ -2,7 +2,7 @@ name: Deploy PR Preview
 
 on:
   pull_request:
-    types: [labeled]
+    types: [labeled, synchronize]
 
 env:
   REGISTRY: ghcr.io
@@ -12,7 +12,7 @@ env:
 jobs:
   metadata:
     runs-on: ubuntu-latest
-    if: ${{ github.event.label.name == 'deploy' }}
+    if: ${{ github.event.action == 'labeled' && github.event.label.name == 'deploy' || github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'deploy') }}
     outputs:
       version: ${{ steps.meta.outputs.version }}
       repo_owner_lower: ${{ steps.meta.outputs.repo_owner_lower }}
