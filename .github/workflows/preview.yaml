@@ -103,6 +103,15 @@ jobs:
           echo "Getting credentials for cluster: ${{ secrets.YC_CLUSTER_ID }}"
           yc managed-kubernetes cluster get-credentials ${{ secrets.YC_CLUSTER_ID }} --external --force
 
+      - name: Create namespace and generate secrets
+        run: |
+          # Create namespace if it doesn't exist
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Generate secrets using the script
+          chmod +x scripts/generate-secrets.sh
+          scripts/generate-secrets.sh ${{ env.NAMESPACE }}
+
       - name: Deploy ${{ matrix.service }}
         run: |
           VERSION="${{ needs.metadata.outputs.version }}"
@@ -121,6 +130,10 @@ jobs:
             --set ingress.host=${{ env.NAMESPACE }}.${{ env.BASE_DOMAIN }} \
             --set ingress.tls.secretName=${{ env.NAMESPACE }}-tls \
             --set postgres.enabled=true \
+            --set postgres.resources.requests.cpu=50m \
+            --set postgres.resources.limits.cpu=100m \
+            --set resources.requests.cpu=50m \
+            --set resources.limits.cpu=100m \
             --set prometheus.enabled=false \
             --set grafana.enabled=false
 
