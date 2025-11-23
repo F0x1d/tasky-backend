@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ingress-nginx
+description: Ingress-nginx controller chart
+type: application
+version: 1.0.0
+appVersion: "1.9.5"

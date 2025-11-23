@@ -1,0 +1,145 @@
+name: tasks-service
+namespace: testing
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/f0x1d/tasks-service
+  tag: "9bebca9"
+  pullPolicy: Always
+
+service:
+  type: ClusterIP
+  port: 8001
+
+config:
+  apiPath: /api/tasks
+
+extraSecrets:
+  - name: rsa-keys
+    mountPath: /app/keys
+    items:
+      - key: public_key.pem
+        path: public_key.pem
+
+postgres:
+  enabled: true
+  name: postgres-tasks
+  instances: 1
+  database: tasks
+  owner: tasks
+  storage:
+    size: 2Gi
+    storageClass: yc-network-hdd
+  postgresql:
+    maxConnections: "50"
+    sharedBuffers: "128MB"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  affinity:
+    enabled: false
+
+prometheus:
+  enabled: true
+  image:
+    repository: prom/prometheus
+    tag: v2.48.0
+  storage:
+    size: 2Gi
+    storageClass: yc-network-hdd
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "100m"
+
+grafana:
+  enabled: true
+  image:
+    repository: grafana/grafana
+    tag: 10.2.2
+  storage:
+    size: 2Gi
+    storageClass: yc-network-hdd
+  serverRootUrl: "%(protocol)s://%(domain)s:%(http_port)s/grafana/"
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
+  ingress:
+    enabled: true
+    className: nginx
+    host: tasky-testing.f0x1d.com
+    path: /grafana
+    pathType: Prefix
+    tls:
+      enabled: true
+      secretName: tasky-testing-f0x1d-com-tls
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+
+ingress:
+  enabled: true
+  className: nginx
+  host: tasky-testing.f0x1d.com
+  path: /api/tasks
+  pathType: ImplementationSpecific
+  tls:
+    enabled: true
+    secretName: tasky-testing-f0x1d-com-tls
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+
+networkPolicy:
+  enabled: true
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+affinity:
+  enabled: false
+
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "256Mi"
+    cpu: "200m"
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8001
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8001
+  initialDelaySeconds: 5
+  periodSeconds: 5

@@ -1,0 +1,66 @@
+name: Cleanup PR Preview
+
+on:
+  pull_request:
+    types: [closed]
+
+env:
+  NAMESPACE: pr-${{ github.event.number }}
+
+jobs:
+  cleanup-preview:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
+      - name: Install Yandex Cloud CLI
+        run: |
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+          echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
+
+      - name: Configure Yandex Cloud CLI
+        run: |
+          yc config profile create sa-profile
+          cat <<'EOF' > key.json
+          ${{ secrets.YC_SERVICE_ACCOUNT_KEY }}
+          EOF
+          yc config set service-account-key key.json
+          yc config set cloud-id ${{ secrets.YC_CLOUD_ID }}
+          yc config set folder-id ${{ secrets.YC_FOLDER_ID }}
+          rm -f key.json
+
+      - name: Configure Kubernetes context
+        run: |
+          echo "Getting credentials for cluster: ${{ secrets.YC_CLUSTER_ID }}"
+          yc managed-kubernetes cluster get-credentials ${{ secrets.YC_CLUSTER_ID }} --external --force
+
+      - name: Delete Helm releases
+        run: |
+          helm delete auth-service --namespace ${{ env.NAMESPACE }} || echo "auth-service release not found"
+          helm delete tasks-service --namespace ${{ env.NAMESPACE }} || echo "tasks-service release not found"
+
+      - name: Delete namespace
+        if: always()
+        run: |
+          kubectl delete namespace ${{ env.NAMESPACE }} || echo "Namespace not found"
+
+      - name: Comment on PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: preview-environment
+          message: |
+            ### 🧹 Preview Environment Cleaned Up
+            
+            The preview environment for this PR has been deleted.
+            **Namespace:** `${{ env.NAMESPACE }}`

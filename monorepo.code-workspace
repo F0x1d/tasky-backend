@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "auth-service"
+		},
+		{
+			"path": "tasks-service"
+		},
+		{
+			"path": "k8s"
+		}
+	],
+	"settings": {}
+}
