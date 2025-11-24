@@ -1,0 +1,147 @@
+name: auth-service
+namespace: testing
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/f0x1d/auth-service
+  tag: "1.0.0"
+  pullPolicy: Always
+
+service:
+  type: ClusterIP
+  port: 8000
+
+config:
+  apiPath: /dev/api/auth
+
+extraSecrets:
+  - name: rsa-keys
+    mountPath: /app/keys
+    items:
+      - key: private_key.pem
+        path: private_key.pem
+      - key: public_key.pem
+        path: public_key.pem
+
+postgres:
+  enabled: true
+  name: postgres-auth
+  instances: 1
+  database: auth
+  owner: auth
+  storage:
+    size: 2Gi
+    storageClass: yc-network-hdd
+  postgresql:
+    maxConnections: "50"
+    sharedBuffers: "128MB"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  affinity:
+    enabled: false
+
+prometheus:
+  enabled: true
+  image:
+    repository: prom/prometheus
+    tag: v2.48.0
+  storage:
+    size: 2Gi
+    storageClass: yc-network-hdd
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "100m"
+
+grafana:
+  enabled: true
+  image:
+    repository: grafana/grafana
+    tag: 10.2.2
+  storage:
+    size: 2Gi
+    storageClass: yc-network-hdd
+  serverRootUrl: "%(protocol)s://%(domain)s:%(http_port)s/dev/auth-grafana/"
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
+  ingress:
+    enabled: true
+    className: nginx
+    host: tasky-testing.f0x1d.com
+    path: /dev/auth-grafana
+    pathType: Prefix
+    tls:
+      enabled: true
+      secretName: tasky-testing-f0x1d-com-tls
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+
+ingress:
+  enabled: true
+  className: nginx
+  host: tasky-testing.f0x1d.com
+  path: /dev/api/auth
+  pathType: ImplementationSpecific
+  tls:
+    enabled: true
+    secretName: tasky-testing-f0x1d-com-tls
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+
+networkPolicy:
+  enabled: true
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+affinity:
+  enabled: false
+
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "256Mi"
+    cpu: "200m"
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 5
+  periodSeconds: 5

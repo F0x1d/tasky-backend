@@ -1,0 +1,79 @@
+{{- if .Values.grafana.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.name }}-grafana
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.name }}-grafana
+spec:
+  serviceName: {{ .Values.name }}-grafana
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.name }}-grafana
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.name }}-grafana
+    spec:
+      securityContext:
+        fsGroup: 472
+      initContainers:
+      - name: init-chown
+        image: busybox:1.36
+        command: ['sh', '-c', 'chown -R 472:472 /var/lib/grafana']
+        volumeMounts:
+        - name: grafana-storage
+          mountPath: /var/lib/grafana
+        securityContext:
+          runAsUser: 0
+      containers:
+      - name: grafana
+        image: "{{ .Values.grafana.image.repository }}:{{ .Values.grafana.image.tag }}"
+        securityContext:
+          runAsUser: 472
+          runAsGroup: 472
+          runAsNonRoot: true
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          value: admin
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: grafana-secrets
+              key: admin_password
+        - name: GF_SERVER_ROOT_URL
+          value: {{ .Values.grafana.serverRootUrl | quote }}
+        - name: GF_SERVER_SERVE_FROM_SUB_PATH
+          value: "true"
+        volumeMounts:
+        - name: grafana-storage
+          mountPath: /var/lib/grafana
+        - name: grafana-datasources
+          mountPath: /etc/grafana/provisioning/datasources
+        resources:
+          requests:
+            memory: "{{ .Values.grafana.resources.requests.memory }}"
+            cpu: "{{ .Values.grafana.resources.requests.cpu }}"
+          limits:
+            memory: "{{ .Values.grafana.resources.limits.memory }}"
+            cpu: "{{ .Values.grafana.resources.limits.cpu }}"
+      volumes:
+      - name: grafana-datasources
+        configMap:
+          name: {{ .Values.name }}-grafana-datasources
+  volumeClaimTemplates:
+  - metadata:
+      name: grafana-storage
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: {{ .Values.grafana.storage.storageClass }}
+      resources:
+        requests:
+          storage: {{ .Values.grafana.storage.size }}
+{{- end }}

@@ -1,0 +1,59 @@
+{{- if .Values.prometheus.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-prometheus-config
+  namespace: {{ .Values.namespace }}
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        cluster: 'production'
+        namespace: '{{ .Values.namespace }}'
+        service: '{{ .Values.name }}'
+
+    scrape_configs:
+      # Service pods discovery - автоматическое обнаружение всех реплик
+      - job_name: '{{ .Values.name }}'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - {{ .Values.namespace }}
+        metrics_path: '/metrics'
+        relabel_configs:
+          # Фильтруем только наш сервис
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: {{ .Values.name }}
+          # Добавляем лейбл с именем пода
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          # Добавляем лейбл с именем контейнера
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+          # Добавляем лейбл с namespace
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          # Добавляем лейбл с именем сервиса
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: service
+          # Добавляем IP пода для идентификации
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: pod_ip
+          # Копируем все kubernetes labels как prometheus labels
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+
+      # PostgreSQL monitoring
+      - job_name: 'postgres'
+        static_configs:
+          - targets: ['{{ .Values.postgres.name }}-rw:5432']
+        relabel_configs:
+          - target_label: service
+            replacement: postgres
+          - target_label: namespace
+            replacement: {{ .Values.namespace }}
+{{- end }}

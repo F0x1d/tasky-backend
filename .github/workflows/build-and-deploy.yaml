@@ -1,0 +1,180 @@
+name: Build and Deploy
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Prod release
+    branches:
+      - dev       # Testing release
+  workflow_dispatch:  # Manual trigger
+    inputs:
+      version:
+        description: 'Version to deploy'
+        required: true
+        default: 'latest'
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+          - prod
+          - testing
+
+env:
+  REGISTRY: ghcr.io
+  
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [auth-service, tasks-service]
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set version and registry
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="$(git rev-parse --short HEAD)"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION}"
+          
+          # Convert repository owner to lowercase for GHCR
+          REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "REPO_OWNER_LOWER=${REPO_OWNER_LOWER}" >> $GITHUB_OUTPUT
+          echo "Repository owner (lowercase): ${REPO_OWNER_LOWER}"
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.version.outputs.REPO_OWNER_LOWER }}/${{ matrix.service }}:${{ steps.version.outputs.VERSION }}
+            ${{ env.REGISTRY }}/${{ steps.version.outputs.REPO_OWNER_LOWER }}/${{ matrix.service }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.event.repository.html_url }}
+            org.opencontainers.image.description=${{ matrix.service }} for microservices architecture
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+    
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+  
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Run on tag pushes (prod), dev branch pushes (testing), and manual dispatch
+    if: (github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/dev')) || github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        service: [auth-service, tasks-service]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENVIRONMENT="${{ github.event.inputs.environment }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            ENVIRONMENT="prod"
+          elif [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            ENVIRONMENT="testing"
+          else
+            ENVIRONMENT="prod"
+          fi
+          echo "ENVIRONMENT=${ENVIRONMENT}" >> $GITHUB_OUTPUT
+          echo "Deploying to environment: ${ENVIRONMENT}"
+      
+      - name: Setup Kubernetes and Yandex Cloud CLI
+        uses: ./.github/actions/setup-k8s
+        with:
+          yc-service-account-key: ${{ secrets.YC_SERVICE_ACCOUNT_KEY }}
+          yc-cloud-id: ${{ secrets.YC_CLOUD_ID }}
+          yc-folder-id: ${{ secrets.YC_FOLDER_ID }}
+          yc-cluster-id: ${{ secrets.YC_CLUSTER_ID }}
+      
+      - name: Deploy ${{ matrix.service }} with Helm
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          ENVIRONMENT="${{ steps.env.outputs.ENVIRONMENT }}"
+          REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          
+          helm upgrade ${{ matrix.service }} ./helm-charts/microservice \
+            --install \
+            --namespace ${ENVIRONMENT} \
+            --create-namespace \
+            --wait \
+            --timeout 20m \
+            --values helm-charts/values/${{ matrix.service }}-${ENVIRONMENT}.yaml \
+            --set namespace=${ENVIRONMENT} \
+            --set image.repository=${{ env.REGISTRY }}/${REPO_OWNER_LOWER}/${{ matrix.service }} \
+            --set image.tag=${VERSION}
+      
+      - name: Verify deployment
+        run: |
+          ENVIRONMENT="${{ steps.env.outputs.ENVIRONMENT }}"
+          kubectl get pods -n ${ENVIRONMENT} -l app=${{ matrix.service }}
+          kubectl rollout status deployment/${{ matrix.service }} -n ${ENVIRONMENT} --timeout=5m
+  
+  summary:
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/dev')) || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Create deployment summary
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENVIRONMENT="${{ github.event.inputs.environment }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            ENVIRONMENT="prod"
+          elif [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            ENVIRONMENT="testing"
+          else
+            ENVIRONMENT="prod"
+          fi
+          
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** \`${ENVIRONMENT}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Registry:** \`${{ env.REGISTRY }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Images Deployed:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.REGISTRY }}/${REPO_OWNER_LOWER}/auth-service:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.REGISTRY }}/${REPO_OWNER_LOWER}/tasks-service:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Monitor:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`kubectl get pods -n ${ENVIRONMENT}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`kubectl logs -f deployment/auth-service -n ${ENVIRONMENT}\`" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,11 @@
+replicaCount: 2
+image:
+  repository: registry.k8s.io/ingress-nginx/controller
+  tag: v1.9.5
+resources:
+  requests:
+    cpu: 100m
+    memory: 90Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi

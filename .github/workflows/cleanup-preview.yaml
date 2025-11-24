@@ -1,0 +1,67 @@
+name: Cleanup PR Preview
+
+on:
+  pull_request:
+    types: [closed]
+
+env:
+  NAMESPACE: pr-${{ github.event.number }}
+
+jobs:
+  delete-releases:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      matrix:
+        service: [auth-service, tasks-service]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Kubernetes and Yandex Cloud CLI
+        uses: ./.github/actions/setup-k8s
+        with:
+          yc-service-account-key: ${{ secrets.YC_SERVICE_ACCOUNT_KEY }}
+          yc-cloud-id: ${{ secrets.YC_CLOUD_ID }}
+          yc-folder-id: ${{ secrets.YC_FOLDER_ID }}
+          yc-cluster-id: ${{ secrets.YC_CLUSTER_ID }}
+
+      - name: Delete Helm release ${{ matrix.service }}
+        run: |
+          helm delete ${{ matrix.service }} --namespace ${{ env.NAMESPACE }} || echo "${{ matrix.service }} release not found"
+
+  cleanup-namespace:
+    needs: delete-releases
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      pull-requests: write
+    if: always()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Kubernetes and Yandex Cloud CLI
+        uses: ./.github/actions/setup-k8s
+        with:
+          yc-service-account-key: ${{ secrets.YC_SERVICE_ACCOUNT_KEY }}
+          yc-cloud-id: ${{ secrets.YC_CLOUD_ID }}
+          yc-folder-id: ${{ secrets.YC_FOLDER_ID }}
+          yc-cluster-id: ${{ secrets.YC_CLUSTER_ID }}
+
+      - name: Delete namespace
+        run: |
+          kubectl delete namespace ${{ env.NAMESPACE }} || echo "Namespace not found"
+
+      - name: Comment on PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: preview-environment
+          message: |
+            ### 🧹 Preview Environment Cleaned Up
+            
+            The preview environment for this PR has been deleted.
+            **Namespace:** `${{ env.NAMESPACE }}`
